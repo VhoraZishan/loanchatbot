@@ -199,15 +199,19 @@ if user_input:
 
             if ok and amt > 0:
 
+                # store loan amount first!
+                apply_agent_result({
+                    "store": {"requested_amount": amt},
+                    "pending_messages": [],
+                    "next_state": STATES.SALES_REQUIREMENTS
+                })
+
+                # now LLM asks for income (if available)
                 history = get_recent_history()
                 llm_msg = llm_sales_response(history, "monthly_income")
 
-                msgs = [llm_msg] if llm_msg else []
-
                 apply_agent_result({
-                    "pending_messages": msgs,
-                    "store": {"requested_amount": amt},
-                    "next_state": STATES.SALES_REQUIREMENTS
+                    "pending_messages": [llm_msg] if llm_msg else ["What is your monthly income?"]
                 })
                 st.rerun()
 
@@ -219,6 +223,7 @@ if user_input:
                 st.rerun()
 
 
+
         # STEP 3 — MONTHLY INCOME
         elif data.get("income") is None:
 
@@ -228,24 +233,30 @@ if user_input:
                 full = SessionState.all_data().copy()
                 full["income"] = inc
 
+                # run underwriting immediately
                 result = handle_initial_underwriting(full)
 
+                # ensure income saved
                 if "store" not in result:
                     result["store"] = {}
-
                 result["store"]["income"] = inc
 
+                # ❌ DO NOT CALL LLM HERE — it corrupts flow
+                # underwriting → negotiation should happen without extra prompts
+
+            else:
+                # invalid income → LLM can help here
                 history = get_recent_history()
                 llm_msg = llm_sales_response(history, "monthly_income")
 
-                if llm_msg:
-                    result["pending_messages"].insert(0, llm_msg)
-
-            else:
                 result = {
-                    "pending_messages": ["Enter a valid monthly income."],
+                    "pending_messages": [
+                        "Enter a valid monthly income.",
+                        llm_msg if llm_msg else "Please re-enter your monthly income."
+                    ],
                     "next_state": STATES.SALES_REQUIREMENTS
                 }
+
 
 
         else:
